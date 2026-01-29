@@ -8,11 +8,11 @@ from config import Config as Config
 
 config = Config()
 
-SFREQ = config.sfrq  # 采样率 500
-WINDOW_SEC = config.time_window_length  # 窗口时长 10
-WIN = SFREQ * WINDOW_SEC  # 一个窗口的数据点个数 5000
-OVERLAP = config.time_window_overlap  # 重叠率 0.75
-STRIDE = int(WIN * (1.0 - OVERLAP))  # 步长 1250
+SFREQ = config.sfrq  # 500
+WINDOW_SEC = config.time_window_length  # 10
+WIN = SFREQ * WINDOW_SEC  # 5000
+OVERLAP = config.time_window_overlap  # 0.75
+STRIDE = int(WIN * (1.0 - OVERLAP))  # 1250
 
 LABEL_MAP = {"HC": 0, "PD": 1}
 
@@ -43,7 +43,7 @@ class _BaseWindowDataset(Dataset):
     def __len__(self):
         return len(self.samples)
 
-    @lru_cache(maxsize=512)  # 你机器内存够就开大点
+    @lru_cache(maxsize=512)
     def _load_file(self, fpath):
         mat = scio.loadmat(fpath, squeeze_me=True)
         x = mat["data"].astype(np.float32)  # [C, L]
@@ -51,7 +51,7 @@ class _BaseWindowDataset(Dataset):
 
     def __getitem__(self, idx):
         fpath, label, start = self.samples[idx]
-        x = self._load_file(fpath)  # 不再反复读盘
+        x = self._load_file(fpath)
         x_win = x[:, start:start + WIN]
         return torch.from_numpy(x_win), torch.tensor(label, dtype=torch.long)
 
@@ -69,3 +69,4 @@ class D3940S(_BaseWindowDataset):
 class D4584S(_BaseWindowDataset):
     def __init__(self, root_dir: str):
         super().__init__(root_dir=root_dir, fixed_length=60000)
+
