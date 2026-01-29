@@ -912,7 +912,6 @@ class FullHyperPQhead(nn.Module):
             ci_hyper = self.lorentz_calculator.expmap0(v=ci_tan0, clip_r=self.clip_r, c=self.neg_curvs[i],
                                                        alpha_scaler=None)
 
-            # 保存每个ci_norm
             # v_norm_i = torch.norm(xi_tan0, dim=-1, keepdim=True)
             # #v_norm_i = torch.minimum(torch.ones_like(v_norm_i), self.clip_r/v_norm_i)*v_norm_i # clipped embeddings
             # v_norm_all.append(v_norm_i)
@@ -966,4 +965,5 @@ class FullHyperPQhead(nn.Module):
             hyper_ci = self.lorentz_calculator.expmap0(v=ci, clip_r=self.clip_r, c=self.neg_curvs[i], alpha_scaler=None)
             hyper_C.append(hyper_ci)
         with open(path, 'wb') as f:
+
             np.save(f, hyper_C.detach().cpu().numpy())
