@@ -15,11 +15,9 @@ from Model import *
 from MyDataset import *
 from config import Config as Config
 
-# 忽略所有UserWarning
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore")
 
-# ====== EEG 根目录和数据集名称 ======
 EEG_ROOT = r'../1-simple_data_process/'
 ALL_DOMAINS = ['2778', '3940', '4584']
 # =====================================================
@@ -38,7 +36,7 @@ def result_calculate(y_true, y_pred, y_prob):
     """
     y_true: list[int] 0/1
     y_pred: list[int] 0/1
-    y_prob: list[float] = P(y==1)  (正类概率)
+    y_prob: list[float] = P(y==1)
     return: dict
     """
     yt = np.asarray(y_true, dtype=np.int64)
@@ -50,7 +48,6 @@ def result_calculate(y_true, y_pred, y_prob):
     out["BA"] = float(balanced_accuracy_score(yt, yp))
     out["F1"] = float(f1_score(yt, yp))
 
-    # AUROC / AUPR 需要同时存在正负类，否则 sklearn 会报错；这里按“尽量少健壮性”处理：直接 try
     try:
         out["AUROC"] = float(roc_auc_score(yt, ys))
     except Exception:
@@ -71,7 +68,6 @@ def extract_emb(backbone_model: MySuperEEG, x: torch.Tensor) -> torch.Tensor:
 
 
 if __name__ == '__main__':
-    # ========= 解包所有用到的配置 =========
     Code_State           = config.State
     batch_size           = config.batch_size
     test_rate            = config.test_rate
@@ -91,13 +87,13 @@ if __name__ == '__main__':
     pq_clip_r            = config.pq_clip_r
     pq_use_alpha         = config.pq_use_alpha
 
-    Spatial_Area_x1      = config.Spatial_Area_x1  # 最小超边
-    Spatial_Area_x2      = config.Spatial_Area_x2  # 最大超边
-    Time_Area_n          = config.Time_Area_n  # 时间范围大小
+    Spatial_Area_x1      = config.Spatial_Area_x1
+    Spatial_Area_x2      = config.Spatial_Area_x2
+    Time_Area_n          = config.Time_Area_n
 
-    margin_M             = config.margin_M  # 层次聚类损失里'类间分离'项的间隔系数
-    w_min                = config.w_min  # 各层损失权重的最小值
-    w_max                = config.w_max  # 各层损失权重的最大值
+    margin_M             = config.margin_M
+    w_min                = config.w_min
+    w_max                = config.w_max
 
     mask_ratio           = config.mask_ratio
     recon_weight         = config.recon_weight
@@ -111,7 +107,6 @@ if __name__ == '__main__':
 
     print('State:', Code_State)
 
-    # ========= 设备 =========
     if torch.cuda.is_available():
         device = torch.device('cuda:' + GPU)
         print('Using GPU:', device)
@@ -121,17 +116,14 @@ if __name__ == '__main__':
 
     win_samples = time_window_length * sfrq
 
-    # ========= 三分支：Train / Finetune / Test =========
     os.makedirs('./Result_Model', exist_ok=True)
 
     if Code_State == 'Train':
-        print("==== 预训练（自监督：重建 + 层次聚类） ====")
+        print("==== Pretrain====")
 
-        # -------- 1) 找到目标域并排除，只保留两个源域 --------
         Source_domain_Names = [d for d in ALL_DOMAINS if d != Target_domain_Name]
-        assert len(Source_domain_Names) == 2, "当前实现按“两个源域”写"
+        assert len(Source_domain_Names) == 2, "2 source domain"
 
-        # -------- 2) 初始化两个源域 dataset（用你新的 MyDataset.py）--------
         name2cls = {"2778": D2778S, "3940": D3940S, "4584": D4584S}
 
         ds_a_name, ds_b_name = Source_domain_Names[0], Source_domain_Names[1]
@@ -140,7 +132,6 @@ if __name__ == '__main__':
 
         train_full = ConcatDataset([ds_a, ds_b])
 
-        # -------- 3) 用 WeightedRandomSampler 做“域大小不平衡”处理 --------
         len_a, len_b = len(ds_a), len(ds_b)
         w_a = 1.0 / float(len_a)
         w_b = 1.0 / float(len_b)
@@ -148,15 +139,13 @@ if __name__ == '__main__':
         weights = torch.empty(len_a + len_b, dtype=torch.double)
         weights[:len_a] = w_a
         weights[len_a:] = w_b
-
-        # 每个 epoch 抽多少个样本？
-        # 用 len(train_full) 是最简单的定义；在该设置下，期望两个域各抽一半
+        
         num_samples = len(train_full)
 
         sampler = WeightedRandomSampler(
             weights=weights,
             num_samples=num_samples,
-            replacement=True,  # 关键：允许小域被重复采样，才能“补齐”不平衡
+            replacement=True,
         )
 
         train_loader = DataLoader(
@@ -168,7 +157,6 @@ if __name__ == '__main__':
             pin_memory=True,
         )
 
-        # -------- 4) 模型初始化--------
         model = MySuperEEG(
             win=win_samples,
             patch_length=patch_length,
@@ -236,11 +224,10 @@ if __name__ == '__main__':
 
 
     elif Code_State == 'Finetune':
-        print("==== 微调（主干+分类头一起训练；5折；加权交叉熵；选模BA；保存为文件夹：backbone+clf） ====")
+        print("==== Finetune ====")
 
-        # -------- 1) 源域：加载两个源域数据（同 Train 分支逻辑）--------
         Source_domain_Names = [d for d in ALL_DOMAINS if d != Target_domain_Name]
-        assert len(Source_domain_Names) == 2, "当前微调实现按“两个源域”写"
+        assert len(Source_domain_Names) == 2, "2 source domain"
 
         name2cls = {"2778": D2778S, "3940": D3940S, "4584": D4584S}
 
@@ -249,16 +236,13 @@ if __name__ == '__main__':
         ds_b = name2cls[ds_b_name](root_dir=os.path.join(EEG_ROOT, ds_b_name))
         train_full = ConcatDataset([ds_a, ds_b])
 
-        # -------- 2) 取所有样本标签，用于 StratifiedKFold --------
         labels = []
         for i in range(len(train_full)):
             labels.append(int(train_full[i][1]))
         labels = np.asarray(labels, dtype=np.int64)
         indices = np.arange(len(train_full))
 
-        # -------- 3) 载入预训练骨干（不冻结，后续一起训练）--------
-        # pretrain_path = './Result_Model/EEG_pretrain_final.pth'
-        pretrain_path = './Result_Model/EEG_pretrain_epoch240.pth'
+        pretrain_path = './Result_Model/EEG_pretrain_final.pth'
         ckpt = torch.load(pretrain_path, map_location=device)
 
         backbone = MySuperEEG(
@@ -278,27 +262,24 @@ if __name__ == '__main__':
         backbone.load_state_dict(ckpt['model'], strict=False)
         backbone.train()
 
-        # -------- 4) 5折交叉验证设置 --------
         skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
 
         exp_name = f'EEG_DG_tgt_{Target_domain_Name}'
 
-        # “全局最佳模型”按 BA 选
         global_best_BA = -1.0
         global_best_metrics = None
         global_best_dir = None
 
-        # 正类 index（默认 1 是 PD=1, HC=0）
+        # PD=1, HC=0
         pos_index = 1
 
         backbone.load_state_dict(ckpt['model'], strict=False)
         init_backbone_state = copy.deepcopy(backbone.state_dict())
         for fi, (tr_idx, va_idx) in enumerate(skf.split(indices, labels), 1):
             print(f"\n===== Finetune Fold {fi}/5 | train={len(tr_idx)} val={len(va_idx)} =====")
-            backbone.load_state_dict(init_backbone_state, strict=True)  # 或 strict=False
+            backbone.load_state_dict(init_backbone_state, strict=True)  # or strict=False
             backbone.train()
 
-            # -------- 4.1) DataLoader--------
             tr_set = Subset(train_full, tr_idx.tolist())
             va_set = Subset(train_full, va_idx.tolist())
 
@@ -319,26 +300,21 @@ if __name__ == '__main__':
                 pin_memory=True,
             )
 
-            # -------- 4.2) 分类头 + 加权交叉熵 --------
             clf = Classification_Head(emb_dim).to(device)
-            # 主干 + 分类头一起训练（一个 optimizer 管两部分参数）
             optimizer = torch.optim.Adam(
                 list(backbone.parameters()) + list(clf.parameters()),
                 lr=learning_rate
             )
-            # 类权重：按训练折统计，反比例权重（少类更大）
             y_tr = labels[tr_idx]
-            n_per_class = np.bincount(y_tr, minlength=2).astype(np.float32)  # 二分类
+            n_per_class = np.bincount(y_tr, minlength=2).astype(np.float32)
             class_weights_np = (n_per_class.sum() / (2.0 * np.maximum(n_per_class, 1.0))).astype(np.float32)
             class_weights = torch.tensor(class_weights_np, device=device, dtype=torch.float32)
             criterion = torch.nn.CrossEntropyLoss(weight=class_weights).to(device)
             # criterion = torch.nn.CrossEntropyLoss().to(device)
-            # fold 内最佳（按 BA）
             fold_best_BA = -1.0
             fold_best_metrics = None
-            fold_best_state = None  # 存 backbone+clf
+            fold_best_state = None
 
-            # -------- 4.3) 训练循环 --------
             for epoch in range(1, epochs + 1):
                 backbone.train()
                 clf.train()
@@ -357,7 +333,6 @@ if __name__ == '__main__':
 
                 tr_loss = tr_loss_sum / max(1, tr_n)
 
-                # -------- 4.4) 验证：收集 y_true / y_pred / y_prob -> 统一算指标 --------
                 backbone.eval()
                 clf.eval()
                 y_true_list, y_pred_list, y_prob_list = [], [], []
@@ -384,7 +359,6 @@ if __name__ == '__main__':
                     f"val_AUROC={metrics['AUROC']:.4f} | val_F1={metrics['F1']:.4f} | val_AUPR={metrics['AUPR']:.4f}"
                 )
 
-                # fold 内按 BA 选最佳：需要同时 snapshot backbone + clf
                 if metrics["BA"] > fold_best_BA:
                     fold_best_BA = metrics["BA"]
                     fold_best_metrics = metrics
@@ -399,8 +373,6 @@ if __name__ == '__main__':
                         "tgt_domain": Target_domain_Name,
                     }
 
-            # -------- 4.5) Fold 结束：按 BA 与全局最优对比，决定是否保存（保存为文件夹：backbone+clf）--------
-            # 你原本逻辑：Fold1直接保存；后续fold若更好覆盖
             if (fi == 1) or (fold_best_BA > global_best_BA):
                 global_best_BA = fold_best_BA
                 global_best_metrics = fold_best_metrics
@@ -408,12 +380,10 @@ if __name__ == '__main__':
                 save_dir = f'./Result_Model/{exp_name}_finetune_fold{fi}_best'
                 global_best_dir = save_dir
 
-                # 覆盖式保存：先删目录再建（避免残留旧文件）
                 if os.path.isdir(save_dir):
                     shutil.rmtree(save_dir)
                 os.makedirs(save_dir, exist_ok=True)
 
-                # 两个部分分别保存
                 torch.save(fold_best_state, os.path.join(save_dir, "checkpoint.pth"))
                 torch.save(fold_best_state["backbone"], os.path.join(save_dir, "backbone.pth"))
                 torch.save(fold_best_state["clf"], os.path.join(save_dir, "clf.pth"))
@@ -423,7 +393,6 @@ if __name__ == '__main__':
                 print(
                     f"[Fold {fi}] best BA={fold_best_BA:.4f} (not better than global {global_best_BA:.4f}) -> not saved")
 
-        # -------- 5) 打印“全局最佳模型”的五个指标 --------
         print("\n==== Finetune Finished ====")
         if global_best_metrics is None:
             print("No best model saved (unexpected).")
@@ -441,15 +410,13 @@ if __name__ == '__main__':
 
 
     elif Code_State == 'Test':
-        print("==== 测试（加载微调最佳模型；目标域测试；保存 metrics.txt + preds.csv） ====")
+        print("==== Test ====")
 
-        # -------- 1) 构造目标域 dataset / dataloader --------
-        # 注意：按你说明 DxxxS 中的 S 与源/目标无关，所以这里直接用 D2778S/D3940S/D4584S 映射
         name2cls = {"2778": D2778S, "3940": D3940S, "4584": D4584S}
         if Target_domain_Name not in name2cls:
             raise SystemExit(
-                f"[Test] Target_domain_Name={Target_domain_Name} 不在 {list(name2cls.keys())} 中。\n"
-                f"请在 Test 分支里补充 name2cls 映射。"
+                f"[Test] Target_domain_Name={Target_domain_Name} not in {list(name2cls.keys())}。\n"
+                f"please supplement name2cls in Test。"
             )
 
         tgt_root = os.path.join(EEG_ROOT, Target_domain_Name)
@@ -466,7 +433,6 @@ if __name__ == '__main__':
 
         print(f"[Test] domain={Target_domain_Name} | test_size={len(test_set)}")
 
-        # -------- 2) 自动找到“微调保存的最佳模型文件夹”（按 checkpoint 里的 BA 最大）--------
         exp_name = f'EEG_DG_tgt_{Target_domain_Name}'
 
         import glob as _glob
@@ -476,8 +442,8 @@ if __name__ == '__main__':
 
         if len(cand_dirs) == 0:
             raise SystemExit(
-                f"[Test] 没找到任何微调模型文件夹：pattern={pattern}\n"
-                f"请先运行 Finetune，或检查 Result_Model 路径。"
+                f"[Test] Finetune model not found：pattern={pattern}\n"
+                f"Please run Finetune first，or check Result_Model path。"
             )
 
         best_dir = None
@@ -501,17 +467,12 @@ if __name__ == '__main__':
 
         if best_dir is None or best_ckpt is None:
             raise SystemExit(
-                f"[Test] 找到了候选目录但无法读取有效 checkpoint.pth：{cand_dirs}\n"
-                f"请检查保存是否完整。"
+                f"[Test] find ok, but read checkpoint.pth：{cand_dirs} not ok \n"
+                f"please check if save ok。"
             )
 
         print(f"[Test] Auto-selected BEST folder: {best_dir} (BA={best_ba:.4f})")
 
-        # -------- (可选) 如果你想手动指定某一折，使用下面两行替换上面的自动选择即可：--------
-        # best_dir = f'./Result_Model/{exp_name}_finetune_fold3_best'
-        # best_ckpt = torch.load(os.path.join(best_dir, "checkpoint.pth"), map_location="cpu")
-
-        # -------- 3) 构造 backbone + clf 并加载权重 --------
         backbone = MySuperEEG(
             win=win_samples,
             patch_length=patch_length,
@@ -534,10 +495,8 @@ if __name__ == '__main__':
         backbone.eval()
         clf.eval()
 
-        # 正类 index（默认 1 是 PD=1, HC=0）
         pos_index = 1
 
-        # -------- 4) 跑测试：收集 y_true / y_pred / y_prob --------
         y_true_list, y_pred_list, y_prob_list = [], [], []
 
         with torch.no_grad():
@@ -556,15 +515,12 @@ if __name__ == '__main__':
 
         metrics = result_calculate(y_true_list, y_pred_list, y_prob_list)
 
-        # -------- 5) 保存：./TestResult/<timestamp>/{metrics.txt, preds.csv} --------
-        # 用到 time（你当前文件顶部没 import time，所以这里本地 import 一下，避免影响其他分支）
         import time as _time
         ts = _time.strftime("%Y%m%d_%H%M%S")
 
         out_dir = os.path.join("./TestResult", ts)
         os.makedirs(out_dir, exist_ok=True)
 
-        # 5.1 保存 preds.csv
         import csv as _csv
         preds_csv = os.path.join(out_dir, "preds.csv")
         with open(preds_csv, "w", newline="", encoding="utf-8") as f:
@@ -573,7 +529,6 @@ if __name__ == '__main__':
             for yt, yp, yp_prob in zip(y_true_list, y_pred_list, y_prob_list):
                 w.writerow([int(yt), int(yp), float(yp_prob)])
 
-        # 5.2 保存 metrics.txt
         metrics_txt = os.path.join(out_dir, "metrics.txt")
         with open(metrics_txt, "w", encoding="utf-8") as f:
             f.write("==== Test Result ====\n")
@@ -602,3 +557,4 @@ if __name__ == '__main__':
             f"F1={metrics['F1']:.4f} | "
             f"AUPR={metrics['AUPR']:.4f}"
         )
+
