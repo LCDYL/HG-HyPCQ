@@ -652,11 +652,11 @@ class MySuperEEG(nn.Module):
         self.stride = self.patch_win
 
         if self.patch_win <= 0:
-            print(f"[MySuperEEG] patch_win 非法: patch_length={self.patch_length}, sfrq={self.sfrq}")
+            print(f"[MySuperEEG] patch_win illegal: patch_length={self.patch_length}, sfrq={self.sfrq}")
             exit(1)
 
         if (self.win % self.patch_win) != 0:
-            print(f"[MySuperEEG] 配置错误：win(={self.win}) 不是 patch_win(={self.patch_win}) 的整倍数。")
+            print(f"[MySuperEEG] error")
             print(f"Please adjust win or patch_length/sfrq to make win % patch_win == 0")
             exit(2)
 
@@ -702,7 +702,7 @@ class MySuperEEG(nn.Module):
         B, C, T = X.shape
 
         if T != self.win:
-            raise SystemExit(f"[MySuperEEG] 输入 T={T} 与配置 win={self.win} 不一致（请统一）")
+            raise SystemExit(f"[MySuperEEG] input T={T} not as same as win={self.win}")
 
         P_index = Make_Patch(C=C, T=T, win=self.patch_win, stride=self.stride).to(X.device)  # [C,Np,2]
         Np = P_index.shape[1]
@@ -721,4 +721,5 @@ class MySuperEEG(nn.Module):
         loss_total = self.recon_weight * loss_recon + self.cluster_weight * loss_cluster
 
         return E_prime_batch, loss_total
+
 
