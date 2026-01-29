@@ -15,11 +15,11 @@ class Config(object):
         self.lr = train.getfloat("lr")
         self.seed = train.getint("seed")
 
-        self.emb_dim = train.getint("emb_dim")  # 每个 patch 的embedding维度 D
+        self.emb_dim = train.getint("emb_dim")
         self.pq_M = train.getint("pq_M")
         self.pq_K = train.getint("pq_K")
         self.pq_softmax_temp = train.getfloat("pq_softmax_temp")
-        self.pq_quant_method = train.get("pq_quant_method")  # ;{"softmax","gumbel","hard"}等
+        self.pq_quant_method = train.get("pq_quant_method")
         self.pq_init_neg_curvs = train.getfloat("pq_init_neg_curvs")
         self.pq_clip_r = train.getfloat("pq_clip_r")
         self.pq_use_alpha = train.getboolean("pq_use_alpha")
@@ -41,4 +41,5 @@ class Config(object):
         self.time_window_length = data.getint("time_window_length")
         self.time_window_overlap = data.getfloat("time_window_overlap")
         self.patch_length = data.getfloat("patch_length")
+
         self.target_domain = data.get("target_domain")
