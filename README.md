@@ -4,8 +4,6 @@
 
 **Jinghong Tang, Zhijing Wu, Yikun Liu, Wei Ju, Jiyao Wang**
 
-[IEEE BIBM 2026](https://juweipku.github.io/publications/) | [Code](https://github.com/LCDYL/HG-HyPCQ)
-
 HG-HyPCQ is a self-supervised framework for electroencephalography (EEG) representation learning and Parkinson's disease (PD) detection. It combines hyperbolic product quantization with adaptive hypergraph spatial aggregation to learn multi-granularity representations for cross-dataset generalization.
 
 ![HG-HyPCQ framework](assets/framework.jpg)
